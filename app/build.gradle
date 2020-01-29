@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'com.google.protobuf'
 
 
 android {
@@ -43,4 +44,28 @@ dependencies {
     compile 'com.google.http-client:google-http-client-gson:1.23.0+' exclude module: 'httpclient'
 
     compile 'com.google.apis:google-api-services-vision:v1-rev369-1.23.0'
+
+    implementation 'com.google.protobuf:protobuf-lite:3.0.0'
+}
+
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.0.0'
+    }
+    plugins {
+        javalite {
+            artifact = 'com.google.protobuf:protoc-gen-javalite:3.0.0'
+        }
+    }
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                remove java
+            }
+            task.plugins {
+                javalite {}
+            }
+        }
+    }
 }

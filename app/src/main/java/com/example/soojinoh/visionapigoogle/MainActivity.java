@@ -256,6 +256,7 @@ public class MainActivity extends AppCompatActivity {
         BatchAnnotateImagesRequest batchAnnotateImagesRequest =
                 new BatchAnnotateImagesRequest();
         batchAnnotateImagesRequest.setRequests(new ArrayList<AnnotateImageRequest>() {{
+
             AnnotateImageRequest annotateImageRequest = new AnnotateImageRequest();
 
             // Add the image
@@ -268,18 +269,29 @@ public class MainActivity extends AppCompatActivity {
 
             // Base64 encode the JPEG
             base64EncodedImage.encodeContent(imageBytes);
+
+
+
             annotateImageRequest.setImage(base64EncodedImage);
 
-            // add the features we want
+
+            // add the features we want :: label_detection
             annotateImageRequest.setFeatures(new ArrayList<Feature>() {{
                 Feature labelDetection = new Feature();
-                labelDetection.setType("LABEL_DETECTION");
+                labelDetection.setType("label_DETECTION");
                 labelDetection.setMaxResults(MAX_LABEL_RESULTS);
                 add(labelDetection);
+
+                Feature textDetection = new Feature();
+                textDetection.setType("TEXT_DETECTION");
+                add(textDetection);
             }});
+            
+
 
             // Add the list of one thing to the request
             add(annotateImageRequest);
+
         }});
 
         Vision.Images.Annotate annotateRequest =
@@ -294,7 +306,9 @@ public class MainActivity extends AppCompatActivity {
     private static String convertResponseToString(BatchAnnotateImagesResponse response) {
         StringBuilder message = new StringBuilder("I found these things:\n\n");
 
+
         List<EntityAnnotation> labels = response.getResponses().get(0).getLabelAnnotations();
+
         if (labels != null) {
             for (EntityAnnotation label : labels) {
                 message.append(String.format(Locale.US, "%.3f: %s", label.getScore(), label.getDescription()));
@@ -304,6 +318,54 @@ public class MainActivity extends AppCompatActivity {
             message.append("nothing");
         }
 
+        List<EntityAnnotation> texts = response.getResponses().get(0).getTextAnnotations();
+
+        if (texts != null) {
+            for (EntityAnnotation text : texts) {
+                message.append(text.getDescription());
+                message.append(texts.get(0).getBoundingPoly());
+//                message.append("\n");
+            }
+        } else {
+            message.append("nothing");
+        }
+
         return message.toString();
     }
+
+
+
+
+
+
+
+//    public static void detectText(String filePath, PrintStream out) throws Exception, IOException {
+//        List<AnnotateImageRequest> requests = new ArrayList<>();
+//
+//        ByteString imgBytes = ByteString.readFrom(new FileInputStream(filePath));
+//
+//        Image img = Image.newBuilder().setContent(imgBytes).build();
+//        Feature feat = Feature.newBuilder().setType(Type.TEXT_DETECTION).build();
+//        AnnotateImageRequest request =
+//                AnnotateImageRequest.newBuilder().addFeatures(feat).setImage(img).build();
+//        requests.add(request);
+//
+//        try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
+//            BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
+//            List<AnnotateImageResponse> responses = response.getResponsesList();
+//
+//            for (AnnotateImageResponse res : responses) {
+//                if (res.hasError()) {
+//                    out.printf("Error: %s\n", res.getError().getMessage());
+//                    return;
+//                }
+//
+//                // For full list of available annotations, see http://g.co/cloud/vision/docs
+//                for (EntityAnnotation annotation : res.getTextAnnotationsList()) {
+//                    out.printf("Text: %s\n", annotation.getDescription());
+//                    out.printf("Position : %s\n", annotation.getBoundingPoly());
+//                }
+//            }
+//        }
+//    }
 }
