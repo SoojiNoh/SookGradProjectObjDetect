@@ -3,6 +3,11 @@ package com.example.soojinoh.visionapigoogle;
 import android.Manifest;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -31,6 +36,7 @@ import com.google.api.services.vision.v1.model.BatchAnnotateImagesResponse;
 import com.google.api.services.vision.v1.model.EntityAnnotation;
 import com.google.api.services.vision.v1.model.Feature;
 import com.google.api.services.vision.v1.model.Image;
+import com.google.api.services.vision.v1.model.Vertex;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -42,6 +48,10 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+//import com.google.android.gms.vision.text.TextBlock;
+
+//import com.google.android.gms.vision.Frame;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -64,8 +74,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int MAX_LABEL_RESULTS = 10;
 
 
-    private TextView mImageDetails;
-    private ImageView mMainImage;
+    public TextView mImageDetails;
+    public ImageView mMainImage;
+    public Bitmap bitmapRect;
 
 
     @Override
@@ -185,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Do the real work in an async task, because we need to use the network anyway
         try {
-            AsyncTask<Object, Void, JSONObject> DetectionTask = new DetectionTask(this, prepareAnnotationRequest(bitmap), bitmap);
+            AsyncTask<Object, Void, String> DetectionTask = new DetectionTask(this, prepareAnnotationRequest(bitmap), bitmap, mMainImage);
             DetectionTask.execute();
         } catch (IOException e) {
             Log.d(TAG, "failed to make API request because of other IOException " +
@@ -193,26 +204,29 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static class DetectionTask extends AsyncTask<Object, Void, JSONObject> {
+    private class DetectionTask extends AsyncTask<Object, Void, String> {
         private final WeakReference<MainActivity> mActivityWeakReference;
         private Vision.Images.Annotate mRequest;
         private Bitmap mBitmap;
+        private List<EntityAnnotation> labels;
+        List<EntityAnnotation> texts;
 
-        DetectionTask(MainActivity activity, Vision.Images.Annotate annotate, Bitmap bitmap) {
+        DetectionTask(MainActivity activity, Vision.Images.Annotate annotate, Bitmap bitmap, ImageView imgView) {
             mActivityWeakReference = new WeakReference<>(activity);
             mRequest = annotate;
-            mBitmap = bitmap;
+            mBitmap= bitmap;
         }
 
         @Override
-        protected JSONObject doInBackground(Object... params) {
-
-            JSONObject resultJSON = new JSONObject();
+        protected String doInBackground(Object... params) {
             try {
                 Log.d(TAG, "created Cloud Vision request object, sending request");
                 BatchAnnotateImagesResponse response = mRequest.execute();
-                return convertResponseToJSON(response);
-//                return convertResponseToString(response);
+
+                labels = response.getResponses().get(0).getLabelAnnotations();
+                texts = response.getResponses().get(0).getTextAnnotations();
+
+                return convertResponseToString(labels, texts);
 
             } catch (GoogleJsonResponseException e) {
                 Log.d(TAG, "failed to make API request because " + e.getContent());
@@ -220,28 +234,20 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "failed to make API request because of other IOException " +
                         e.getMessage());
             }
-
-            try {
-                resultJSON.put("msg", "Cloud Vision API request failed. Check logs for details.");
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
-
-            return resultJSON;
+            return "Cloud Vision API request failed. Check logs for details.";
         }
 
-        protected void onPostExecute(JSONObject result) {
+        protected void onPostExecute(String result) {
             MainActivity activity = mActivityWeakReference.get();
+
             if (activity != null && !activity.isFinishing()) {
                 TextView imageDetail = activity.findViewById(R.id.image_details);
-                try {
-                    imageDetail.setText(result.getString("labels"));
-                    imageDetail.append(result.getString("texts"));
-//                    imageDetail.append(result.getString("boundary"));
-//                    showTextRect(mBitmap, result.getString("boundary"));
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
+                imageDetail.setText(result);
+
+                ImageView imageView = activity.findViewById(R.id.main_image);
+                imageView.setImageDrawable(new BitmapDrawable(textRect(texts, mBitmap)));
+//                int res = getResources().getIdentifier("green", "drawable", activity.getPackageName());
+//                imageView.setImageResource(res);
             }
         }
     }
@@ -325,37 +331,39 @@ public class MainActivity extends AppCompatActivity {
         return annotateRequest;
     }
 
-    private static String convertResponseToString(BatchAnnotateImagesResponse response) {
+    private static String convertResponseToString(List<EntityAnnotation> labels, List<EntityAnnotation> texts) {
         StringBuilder message = new StringBuilder("I found these things:\n\n");
 
 
-        List<EntityAnnotation> labels = response.getResponses().get(0).getLabelAnnotations();
+//        List<EntityAnnotation> labels = response.getResponses().get(0).getLabelAnnotations();
 
         if (labels != null) {
             for (EntityAnnotation label : labels) {
                 message.append(String.format(Locale.US, "%.3f: %s", label.getScore(), label.getDescription()));
-                message.append("\n");
+                message.append("\n\n");
             }
         } else {
             message.append("nothing");
         }
 
-        List<EntityAnnotation> texts = response.getResponses().get(0).getTextAnnotations();
+//        List<EntityAnnotation> texts = response.getResponses().get(0).getTextAnnotations();
 
         if (texts != null) {
             for (EntityAnnotation text : texts) {
-                message.append(text.getDescription());
-                message.append(texts.get(0).getBoundingPoly());
+                message.append(text.getDescription()+"\n\n");
+                message.append(text.getBoundingPoly());
             }
         } else {
             message.append("nothing");
         }
+
+
 
         return message.toString();
     }
 
 
-    private static JSONObject convertResponseToJSON(BatchAnnotateImagesResponse response) {
+    private static JSONObject convertResponseToJSON(BatchAnnotateImagesResponse response, Bitmap bitmap) {
         JSONObject message = new JSONObject(response);
 
         List<EntityAnnotation> labels = response.getResponses().get(0).getLabelAnnotations();
@@ -364,11 +372,9 @@ public class MainActivity extends AppCompatActivity {
         List<EntityAnnotation> texts = response.getResponses().get(0).getTextAnnotations();
 
 
-
         try {
             message.put("labels", labels);
             message.put( "texts", texts);
-//            message.put("boundary", textString.append(texts.get(0).getBoundingPoly()));
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -377,190 +383,39 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-//    private void showTextRect(Bitmap bitmap, TextBlock items) {
-//
-//        Frame frame = new Frame.Builder().SetBitmap(bitmap).Build();
-//
-//
-//        SparseArray items = textRecognizer.Detect(frame);
-//
-//        List<TextBlock> blocks = new List<TextBlock>() {
-//            @Override
-//            public int size() {
-//                return 0;
-//            }
-//
-//            @Override
-//            public boolean isEmpty() {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean contains(Object o) {
-//                return false;
-//            }
-//
-//            @Override
-//            public Iterator<TextBlock> iterator() {
-//                return null;
-//            }
-//
-//            @Override
-//            public Object[] toArray() {
-//                return new Object[0];
-//            }
-//
-//            @Override
-//            public <T> T[] toArray(T[] ts) {
-//                return null;
-//            }
-//
-//            @Override
-//            public boolean add(TextBlock textBlock) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean remove(Object o) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean containsAll(Collection<?> collection) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean addAll(Collection<? extends TextBlock> collection) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean addAll(int i, @NonNull Collection<? extends TextBlock> collection) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean removeAll(Collection<?> collection) {
-//                return false;
-//            }
-//
-//            @Override
-//            public boolean retainAll(Collection<?> collection) {
-//                return false;
-//            }
-//
-//            @Override
-//            public void clear() {
-//
-//            }
-//
-//            @Override
-//            public TextBlock get(int i) {
-//                return null;
-//            }
-//
-//            @Override
-//            public TextBlock set(int i, TextBlock textBlock) {
-//                return null;
-//            }
-//
-//            @Override
-//            public void add(int i, TextBlock textBlock) {
-//
-//            }
-//
-//            @Override
-//            public TextBlock remove(int i) {
-//                return null;
-//            }
-//
-//            @Override
-//            public int indexOf(Object o) {
-//                return 0;
-//            }
-//
-//            @Override
-//            public int lastIndexOf(Object o) {
-//                return 0;
-//            }
-//
-//            @NonNull
-//            @Override
-//            public ListIterator<TextBlock> listIterator() {
-//                return null;
-//            }
-//
-//            @NonNull
-//            @Override
-//            public ListIterator<TextBlock> listIterator(int i) {
-//                return null;
-//            }
-//
-//            @NonNull
-//            @Override
-//            public List<TextBlock> subList(int i, int i1) {
-//                return null;
-//            }
-//        };
-//
-//        TextBlock myItem = null;
-//        for (int i = 0; i < items.size(); ++i)
-//        {
-//            myItem = (TextBlock)items.ValueAt(i);
-//
-//            //Add All TextBlocks to the `blocks` List
-//            blocks.Add(myItem);
-//
-//        }
-//        //END OF DETECTING TEXT
-//
-//        //The Color of the Rectangle to Draw on top of Text
-//        Paint rectPaint = new Paint();
-//        rectPaint.setColor(Color.WHITE);
-//        rectPaint.setStyle(Paint.Style.STROKE);
-//        rectPaint.setStrokeWidth(4.0f);
-//
-//        //Create the Canvas object,
-//        //Which ever way you do image that is ScreenShot for example, you
-//        //need the views Height and Width to draw recatngles
-//        //because the API detects the position of Text on the View
-//        //So Dimesnions are important for Draw method to draw at that Text
-//        //Location
-//        Bitmap tempBitmap = Bitmap.createBitmap(bitmap.Width, bitmap.Height, Bitmap.Config.Rgb565);
-//        Canvas canvas = new Canvas(tempBitmap);
-//        canvas.drawBitmap(bitmap, 0, 0, null);
-//
-//        //Loop through each `Block`
-//        foreach (TextBlock textBlock in blocks)
-//        {
-//            IList<IText> textLines = textBlock.Components;
-//
-//            //loop Through each `Line`
-//            foreach (IText currentLine in textLines)
-//            {
-//                IList<IText>  words = currentLine.Components;
-//
-//                //Loop through each `Word`
-//                foreach (IText currentword in words)
-//                {
-//                    //Get the Rectangle/boundingBox of the word
-//                    RectF rect = new RectF(currentword.BoundingBox);
-//                    rectPaint.Color = Color.Black;
-//
-//                    //Finally Draw Rectangle/boundingBox around word
-//                    canvas.DrawRect(rect, rectPaint);
-//
-//                    //Set image to the `View`
-//                    imgView.SetImageDrawable(new BitmapDrawable(Resources, tempBitmap));
-//
-//
-//                }
-//
-//            }
-//        }
-//
-//    }
+    private static Bitmap textRect(List<EntityAnnotation> texts, Bitmap bitmap) {
+
+        //The Color of the Rectangle to Draw on top of Text
+        Paint paint = new Paint();
+        paint.setColor(Color.WHITE);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(4.0f);
+
+        Bitmap tempBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.RGB_565);
+        Canvas canvas = new Canvas(tempBitmap);
+        canvas.drawBitmap(bitmap, 0, 0, null);
+
+        for (EntityAnnotation text : texts) {
+
+            Path path = new Path();
+            //                path.reset(); // only needed when reusing this path for a new build
+
+            ArrayList <Vertex> vertices = (ArrayList) text.getBoundingPoly().getVertices();
+
+            Vertex vertexFirst = vertices.get(0);
+            path.moveTo(vertexFirst.getX(), vertexFirst.getY()); // used for first point
+            vertices.remove(0);
+
+            for (Vertex vertex : vertices){
+                path.lineTo(vertex.getX(), vertex.getY()); // there is a setLastPoint action but i found it not to work as expected
+            }
+            path.lineTo(vertexFirst.getX(), vertexFirst.getY());
+            canvas.drawPath(path, paint);
+        }
+
+        return tempBitmap;
+
+    }
 
 
 }
