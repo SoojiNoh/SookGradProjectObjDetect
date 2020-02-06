@@ -32,6 +32,9 @@ import com.google.api.services.vision.v1.model.EntityAnnotation;
 import com.google.api.services.vision.v1.model.Feature;
 import com.google.api.services.vision.v1.model.Image;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -63,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView mImageDetails;
     private ImageView mMainImage;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -181,29 +185,34 @@ public class MainActivity extends AppCompatActivity {
 
         // Do the real work in an async task, because we need to use the network anyway
         try {
-            AsyncTask<Object, Void, String> labelDetectionTask = new LableDetectionTask(this, prepareAnnotationRequest(bitmap));
-            labelDetectionTask.execute();
+            AsyncTask<Object, Void, JSONObject> DetectionTask = new DetectionTask(this, prepareAnnotationRequest(bitmap), bitmap);
+            DetectionTask.execute();
         } catch (IOException e) {
             Log.d(TAG, "failed to make API request because of other IOException " +
                     e.getMessage());
         }
     }
 
-    private static class LableDetectionTask extends AsyncTask<Object, Void, String> {
+    private static class DetectionTask extends AsyncTask<Object, Void, JSONObject> {
         private final WeakReference<MainActivity> mActivityWeakReference;
         private Vision.Images.Annotate mRequest;
+        private Bitmap mBitmap;
 
-        LableDetectionTask(MainActivity activity, Vision.Images.Annotate annotate) {
+        DetectionTask(MainActivity activity, Vision.Images.Annotate annotate, Bitmap bitmap) {
             mActivityWeakReference = new WeakReference<>(activity);
             mRequest = annotate;
+            mBitmap = bitmap;
         }
 
         @Override
-        protected String doInBackground(Object... params) {
+        protected JSONObject doInBackground(Object... params) {
+
+            JSONObject resultJSON = new JSONObject();
             try {
                 Log.d(TAG, "created Cloud Vision request object, sending request");
                 BatchAnnotateImagesResponse response = mRequest.execute();
-                return convertResponseToString(response);
+                return convertResponseToJSON(response);
+//                return convertResponseToString(response);
 
             } catch (GoogleJsonResponseException e) {
                 Log.d(TAG, "failed to make API request because " + e.getContent());
@@ -211,14 +220,28 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "failed to make API request because of other IOException " +
                         e.getMessage());
             }
-            return "Cloud Vision API request failed. Check logs for details.";
+
+            try {
+                resultJSON.put("msg", "Cloud Vision API request failed. Check logs for details.");
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            return resultJSON;
         }
 
-        protected void onPostExecute(String result) {
+        protected void onPostExecute(JSONObject result) {
             MainActivity activity = mActivityWeakReference.get();
             if (activity != null && !activity.isFinishing()) {
                 TextView imageDetail = activity.findViewById(R.id.image_details);
-                imageDetail.setText(result);
+                try {
+                    imageDetail.setText(result.getString("labels"));
+                    imageDetail.append(result.getString("texts"));
+//                    imageDetail.append(result.getString("boundary"));
+//                    showTextRect(mBitmap, result.getString("boundary"));
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
             }
         }
     }
@@ -253,8 +276,7 @@ public class MainActivity extends AppCompatActivity {
 
         Vision vision = builder.build();
 
-        BatchAnnotateImagesRequest batchAnnotateImagesRequest =
-                new BatchAnnotateImagesRequest();
+        BatchAnnotateImagesRequest batchAnnotateImagesRequest = new BatchAnnotateImagesRequest();
         batchAnnotateImagesRequest.setRequests(new ArrayList<AnnotateImageRequest>() {{
 
             AnnotateImageRequest annotateImageRequest = new AnnotateImageRequest();
@@ -324,7 +346,6 @@ public class MainActivity extends AppCompatActivity {
             for (EntityAnnotation text : texts) {
                 message.append(text.getDescription());
                 message.append(texts.get(0).getBoundingPoly());
-//                message.append("\n");
             }
         } else {
             message.append("nothing");
@@ -334,38 +355,212 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    private static JSONObject convertResponseToJSON(BatchAnnotateImagesResponse response) {
+        JSONObject message = new JSONObject(response);
+
+        List<EntityAnnotation> labels = response.getResponses().get(0).getLabelAnnotations();
+
+
+        List<EntityAnnotation> texts = response.getResponses().get(0).getTextAnnotations();
 
 
 
+        try {
+            message.put("labels", labels);
+            message.put( "texts", texts);
+//            message.put("boundary", textString.append(texts.get(0).getBoundingPoly()));
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        return message;
+    }
 
 
-//    public static void detectText(String filePath, PrintStream out) throws Exception, IOException {
-//        List<AnnotateImageRequest> requests = new ArrayList<>();
+//    private void showTextRect(Bitmap bitmap, TextBlock items) {
 //
-//        ByteString imgBytes = ByteString.readFrom(new FileInputStream(filePath));
+//        Frame frame = new Frame.Builder().SetBitmap(bitmap).Build();
 //
-//        Image img = Image.newBuilder().setContent(imgBytes).build();
-//        Feature feat = Feature.newBuilder().setType(Type.TEXT_DETECTION).build();
-//        AnnotateImageRequest request =
-//                AnnotateImageRequest.newBuilder().addFeatures(feat).setImage(img).build();
-//        requests.add(request);
 //
-//        try (ImageAnnotatorClient client = ImageAnnotatorClient.create()) {
-//            BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
-//            List<AnnotateImageResponse> responses = response.getResponsesList();
+//        SparseArray items = textRecognizer.Detect(frame);
 //
-//            for (AnnotateImageResponse res : responses) {
-//                if (res.hasError()) {
-//                    out.printf("Error: %s\n", res.getError().getMessage());
-//                    return;
+//        List<TextBlock> blocks = new List<TextBlock>() {
+//            @Override
+//            public int size() {
+//                return 0;
+//            }
+//
+//            @Override
+//            public boolean isEmpty() {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean contains(Object o) {
+//                return false;
+//            }
+//
+//            @Override
+//            public Iterator<TextBlock> iterator() {
+//                return null;
+//            }
+//
+//            @Override
+//            public Object[] toArray() {
+//                return new Object[0];
+//            }
+//
+//            @Override
+//            public <T> T[] toArray(T[] ts) {
+//                return null;
+//            }
+//
+//            @Override
+//            public boolean add(TextBlock textBlock) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean remove(Object o) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean containsAll(Collection<?> collection) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean addAll(Collection<? extends TextBlock> collection) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean addAll(int i, @NonNull Collection<? extends TextBlock> collection) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean removeAll(Collection<?> collection) {
+//                return false;
+//            }
+//
+//            @Override
+//            public boolean retainAll(Collection<?> collection) {
+//                return false;
+//            }
+//
+//            @Override
+//            public void clear() {
+//
+//            }
+//
+//            @Override
+//            public TextBlock get(int i) {
+//                return null;
+//            }
+//
+//            @Override
+//            public TextBlock set(int i, TextBlock textBlock) {
+//                return null;
+//            }
+//
+//            @Override
+//            public void add(int i, TextBlock textBlock) {
+//
+//            }
+//
+//            @Override
+//            public TextBlock remove(int i) {
+//                return null;
+//            }
+//
+//            @Override
+//            public int indexOf(Object o) {
+//                return 0;
+//            }
+//
+//            @Override
+//            public int lastIndexOf(Object o) {
+//                return 0;
+//            }
+//
+//            @NonNull
+//            @Override
+//            public ListIterator<TextBlock> listIterator() {
+//                return null;
+//            }
+//
+//            @NonNull
+//            @Override
+//            public ListIterator<TextBlock> listIterator(int i) {
+//                return null;
+//            }
+//
+//            @NonNull
+//            @Override
+//            public List<TextBlock> subList(int i, int i1) {
+//                return null;
+//            }
+//        };
+//
+//        TextBlock myItem = null;
+//        for (int i = 0; i < items.size(); ++i)
+//        {
+//            myItem = (TextBlock)items.ValueAt(i);
+//
+//            //Add All TextBlocks to the `blocks` List
+//            blocks.Add(myItem);
+//
+//        }
+//        //END OF DETECTING TEXT
+//
+//        //The Color of the Rectangle to Draw on top of Text
+//        Paint rectPaint = new Paint();
+//        rectPaint.setColor(Color.WHITE);
+//        rectPaint.setStyle(Paint.Style.STROKE);
+//        rectPaint.setStrokeWidth(4.0f);
+//
+//        //Create the Canvas object,
+//        //Which ever way you do image that is ScreenShot for example, you
+//        //need the views Height and Width to draw recatngles
+//        //because the API detects the position of Text on the View
+//        //So Dimesnions are important for Draw method to draw at that Text
+//        //Location
+//        Bitmap tempBitmap = Bitmap.createBitmap(bitmap.Width, bitmap.Height, Bitmap.Config.Rgb565);
+//        Canvas canvas = new Canvas(tempBitmap);
+//        canvas.drawBitmap(bitmap, 0, 0, null);
+//
+//        //Loop through each `Block`
+//        foreach (TextBlock textBlock in blocks)
+//        {
+//            IList<IText> textLines = textBlock.Components;
+//
+//            //loop Through each `Line`
+//            foreach (IText currentLine in textLines)
+//            {
+//                IList<IText>  words = currentLine.Components;
+//
+//                //Loop through each `Word`
+//                foreach (IText currentword in words)
+//                {
+//                    //Get the Rectangle/boundingBox of the word
+//                    RectF rect = new RectF(currentword.BoundingBox);
+//                    rectPaint.Color = Color.Black;
+//
+//                    //Finally Draw Rectangle/boundingBox around word
+//                    canvas.DrawRect(rect, rectPaint);
+//
+//                    //Set image to the `View`
+//                    imgView.SetImageDrawable(new BitmapDrawable(Resources, tempBitmap));
+//
+//
 //                }
 //
-//                // For full list of available annotations, see http://g.co/cloud/vision/docs
-//                for (EntityAnnotation annotation : res.getTextAnnotationsList()) {
-//                    out.printf("Text: %s\n", annotation.getDescription());
-//                    out.printf("Position : %s\n", annotation.getBoundingPoly());
-//                }
 //            }
 //        }
+//
 //    }
+
+
 }

@@ -45,7 +45,11 @@ dependencies {
 
     compile 'com.google.apis:google-api-services-vision:v1-rev369-1.23.0'
 
+
+//    implementation 'com.google.android.gms:play-services-vision:19.0.0'
+
     implementation 'com.google.protobuf:protobuf-lite:3.0.0'
+
 }
 
 
